@@ -3,17 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QFileInfo, QTimer, Qt
-from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QIcon
+from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QFileIconProvider
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
     QFileDialog,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QMainWindow,
-    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -25,174 +23,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .ahk_manager import AHKManager
-from .config import AppConfig, ConfigStore, ManagedItem
-from .process_manager import ProcessManager, ProcessState
+from .config import AppConfig, ConfigStore
 from .qdir_ahk_manager import QdirAhkManager, QdirAhkScript, QdirAhkState
 from .single_instance import SingleInstanceGuard
-
-
-class DropSurface(QWidget):
-    def __init__(self) -> None:
-        super().__init__()
-        self.setAcceptDrops(True)
-
-    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-
-    def dropEvent(self, event: QDropEvent) -> None:
-        event.acceptProposedAction()
-
-    def dropped_paths(self, event: QDropEvent) -> list[str]:
-        return [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]
-
-
-class TraySurface(DropSurface):
-    def __init__(
-        self,
-        config: AppConfig,
-        store: ConfigStore,
-        process_manager: ProcessManager,
-        ahk_manager: AHKManager,
-    ) -> None:
-        super().__init__()
-        self.config = config
-        self.store = store
-        self.process_manager = process_manager
-        self.ahk_manager = ahk_manager
-        self.states: list[ProcessState] = []
-
-        layout = QVBoxLayout(self)
-        header = QHBoxLayout()
-        title = QLabel("TRAY SURFACE")
-        title.setObjectName("surfaceTitle")
-        header.addWidget(title)
-        header.addStretch()
-        refresh = QPushButton("Refresh")
-        refresh.clicked.connect(self.refresh)
-        kill_all = QPushButton("Kill All")
-        kill_all.setObjectName("dangerButton")
-        kill_all.clicked.connect(self.kill_all)
-        header.addWidget(refresh)
-        header.addWidget(kill_all)
-        layout.addLayout(header)
-
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.content = QWidget()
-        self.list_layout = QVBoxLayout(self.content)
-        self.list_layout.setAlignment(Qt.AlignTop)
-        self.scroll.setWidget(self.content)
-        layout.addWidget(self.scroll)
-        self.refresh()
-
-    def dropEvent(self, event: QDropEvent) -> None:
-        group = None
-        paths = self.dropped_paths(event)
-        if any(path.lower().endswith(".ahk") or Path(path).is_dir() for path in paths):
-            group, ok = QInputDialog.getText(self, "AHK Group", "Exclusive group name (optional):")
-            group = optional_group_name(group, ok)
-
-        for path in paths:
-            added = self.process_manager.register_path(path, group=group)
-            for item in added:
-                if item.item_type == "AHK":
-                    self.ahk_manager.set_group(item, group)
-        self.store.save(self.config)
-        self.refresh()
-        super().dropEvent(event)
-
-    def refresh(self) -> None:
-        self.states = self.process_manager.poll()
-        self._clear_list()
-        if not self.states:
-            label = QLabel("Drop .ahk, .exe, or folders here")
-            label.setObjectName("emptyState")
-            self.list_layout.addWidget(label)
-            return
-
-        for state in self.states:
-            row = ProcessRow(state)
-            row.start_requested.connect(lambda checked=False, current=state.item: self.start(current))
-            row.stop_requested.connect(lambda checked=False, current=state.item: self.stop(current))
-            row.restart_requested.connect(lambda checked=False, current=state.item: self.restart(current))
-            self.list_layout.addWidget(row)
-
-    def start(self, item: ManagedItem) -> None:
-        if item.item_type == "AHK":
-            self.ahk_manager.start(item)
-        else:
-            self.process_manager.launch(item)
-        self.store.save(self.config)
-        self.refresh()
-
-    def stop(self, item: ManagedItem) -> None:
-        self.process_manager.terminate(item)
-        self.store.save(self.config)
-        self.refresh()
-
-    def restart(self, item: ManagedItem) -> None:
-        if item.item_type == "AHK":
-            self.process_manager.terminate(item)
-            self.ahk_manager.start(item)
-        else:
-            self.process_manager.restart(item)
-        self.store.save(self.config)
-        self.refresh()
-
-    def kill_all(self) -> None:
-        killed = self.process_manager.kill_all_managed()
-        QMessageBox.information(self, "Kill All", f"Terminated {killed} managed process(es).")
-        self.refresh()
-
-    def _clear_list(self) -> None:
-        while self.list_layout.count():
-            child = self.list_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
-
-
-class ProcessRow(QFrame):
-    from PySide6.QtCore import Signal
-
-    start_requested = Signal()
-    stop_requested = Signal()
-    restart_requested = Signal()
-
-    def __init__(self, state: ProcessState) -> None:
-        super().__init__()
-        self.setObjectName("processRow")
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)
-
-        icon = QLabel()
-        icon.setPixmap(icon_for_path(state.item.path).pixmap(24, 24))
-        layout.addWidget(icon)
-
-        name = QLabel(state.item.name)
-        name.setMinimumWidth(180)
-        layout.addWidget(name)
-
-        status = QLabel(state.status)
-        status.setObjectName("running" if state.status == "RUNNING" else "stopped")
-        layout.addWidget(status)
-
-        item_type = QLabel(state.item.group or state.item.item_type)
-        item_type.setMinimumWidth(120)
-        layout.addWidget(item_type)
-
-        layout.addStretch()
-        for text, signal, enabled in (
-            ("START", self.start_requested, state.item.managed),
-            ("STOP", self.stop_requested, state.can_stop),
-            ("RESTART", self.restart_requested, state.item.managed),
-        ):
-            button = QToolButton()
-            button.setText(text)
-            button.setEnabled(enabled)
-            button.clicked.connect(signal.emit)
-            layout.addWidget(button)
 
 
 class MutuallyExclusiveAhkSurface(QWidget):
@@ -398,8 +231,6 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.store = store
         self.config = store.load()
-        self.process_manager = ProcessManager(self.config)
-        self.ahk_manager = AHKManager(self.config, self.process_manager)
         self.qdir_ahk_manager = QdirAhkManager()
         self.close_to_tray = False
         self.exit_requested = False
@@ -413,19 +244,13 @@ class MainWindow(QMainWindow):
             | Qt.WindowCloseButtonHint
             | Qt.MSWindowsFixedSizeDialogHint
         )
-        self.setFixedSize(775, 1000)
+        self.setFixedSize(775, 550)
 
         central = QWidget()
         layout = QVBoxLayout(central)
-        self.tray_surface = TraySurface(self.config, self.store, self.process_manager, self.ahk_manager)
         self.qdir_ahk_surface = MutuallyExclusiveAhkSurface(self.config, self.store, self.qdir_ahk_manager)
-        layout.addWidget(self.tray_surface, 2)
-        layout.addWidget(self.qdir_ahk_surface, 1)
+        layout.addWidget(self.qdir_ahk_surface)
         self.setCentralWidget(central)
-
-        self.tray_timer = QTimer(self)
-        self.tray_timer.timeout.connect(self.refresh_tray_surface)
-        self.tray_timer.start(self.config.refresh_interval_ms)
 
         self.qdir_timer = QTimer(self)
         self.qdir_timer.timeout.connect(self.refresh_qdir_surface)
@@ -447,11 +272,6 @@ class MainWindow(QMainWindow):
     def request_exit(self) -> None:
         self.exit_requested = True
         self.store.save(self.config)
-
-    def refresh_tray_surface(self) -> None:
-        if self.qdir_ahk_surface.busy:
-            return
-        self.tray_surface.refresh()
 
     def refresh_qdir_surface(self) -> None:
         if self.qdir_ahk_surface.busy:
@@ -574,12 +394,6 @@ def icon_for_path(path: str) -> QIcon:
         provider = QFileIconProvider()
         return provider.icon(QFileInfo(str(file_path)))
     return QApplication.style().standardIcon(QStyle.SP_FileIcon)
-
-
-def optional_group_name(group: str | None, ok: bool) -> str | None:
-    if not ok or group is None:
-        return None
-    return group.strip() or None
 
 
 def status_label_name(status: str) -> str:
