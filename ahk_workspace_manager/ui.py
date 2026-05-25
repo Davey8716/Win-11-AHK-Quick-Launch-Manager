@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QFileInfo, QTimer, Qt
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
+from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QIcon
 from PySide6.QtWidgets import QFileIconProvider
 from PySide6.QtWidgets import (
     QApplication,
@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QStyle,
+    QSystemTrayIcon,
+    QMenu,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -399,6 +401,8 @@ class MainWindow(QMainWindow):
         self.process_manager = ProcessManager(self.config)
         self.ahk_manager = AHKManager(self.config, self.process_manager)
         self.qdir_ahk_manager = QdirAhkManager()
+        self.close_to_tray = False
+        self.exit_requested = False
 
         self.setWindowTitle("Tray Manager")
         self.setWindowFlags(
@@ -431,7 +435,18 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         self.store.save(self.config)
+        if self.close_to_tray and not self.exit_requested:
+            event.ignore()
+            self.hide()
+            return
         super().closeEvent(event)
+
+    def enable_close_to_tray(self) -> None:
+        self.close_to_tray = True
+
+    def request_exit(self) -> None:
+        self.exit_requested = True
+        self.store.save(self.config)
 
     def refresh_tray_surface(self) -> None:
         if self.qdir_ahk_surface.busy:
@@ -487,6 +502,69 @@ class MainWindow(QMainWindow):
         )
 
 
+class ApplicationTrayIcon:
+    def __init__(self, app: QApplication, window: MainWindow, icon: QIcon) -> None:
+        self.app = app
+        self.window = window
+        self.tray_icon = QSystemTrayIcon(icon, window)
+        self.tray_icon.setToolTip("Tray Manager")
+
+        self.menu = QMenu(window)
+        self.open_action = QAction("Open Tray Manager", window)
+        self.hide_action = QAction("Hide", window)
+        self.exit_action = QAction("Exit", window)
+
+        self.open_action.triggered.connect(self.show_window)
+        self.hide_action.triggered.connect(window.hide)
+        self.exit_action.triggered.connect(self.exit_app)
+
+        self.menu.addAction(self.open_action)
+        self.menu.addAction(self.hide_action)
+        self.menu.addSeparator()
+        self.menu.addAction(self.exit_action)
+
+        self.tray_icon.setContextMenu(self.menu)
+        self.tray_icon.activated.connect(self._activated)
+
+    def show(self) -> None:
+        self.tray_icon.show()
+
+    def show_window(self) -> None:
+        self.window.show()
+        self.window.raise_()
+        self.window.activateWindow()
+
+    def exit_app(self) -> None:
+        self.window.request_exit()
+        self.tray_icon.hide()
+        self.app.quit()
+
+    def _activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+        if reason == QSystemTrayIcon.DoubleClick:
+            self.show_window()
+
+
+def application_icon() -> QIcon:
+    return QApplication.style().standardIcon(QStyle.SP_ComputerIcon)
+
+
+def configure_tray_application(app: QApplication, window: MainWindow) -> ApplicationTrayIcon | None:
+    app.setQuitOnLastWindowClosed(False)
+    icon = application_icon()
+    app.setWindowIcon(icon)
+    window.setWindowIcon(icon)
+    if not QSystemTrayIcon.isSystemTrayAvailable():
+        app.setQuitOnLastWindowClosed(True)
+        window.show()
+        return None
+
+    window.enable_close_to_tray()
+    tray_icon = ApplicationTrayIcon(app, window, icon)
+    window.application_tray_icon = tray_icon
+    tray_icon.show()
+    return tray_icon
+
+
 def icon_for_path(path: str) -> QIcon:
     file_path = Path(path)
     if file_path.exists():
@@ -516,7 +594,7 @@ def run() -> int:
     try:
         app = QApplication([])
         window = MainWindow(ConfigStore())
-        window.show()
+        configure_tray_application(app, window)
         return app.exec()
     finally:
         guard.release()
