@@ -311,7 +311,8 @@ class MainWindow(QMainWindow):
         self.qdir_ahk_manager = QdirAhkManager()
 
         self.setWindowTitle("Tray Manager")
-        self.resize(900, 760)
+        self.setWindowFlag(Qt.WindowMaximizeButtonHint, False)
+        self.setFixedSize(775, 1000)
 
         central = QWidget()
         layout = QVBoxLayout(central)
