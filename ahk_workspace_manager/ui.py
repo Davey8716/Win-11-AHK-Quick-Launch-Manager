@@ -26,6 +26,7 @@ from .ahk_manager import AHKManager
 from .config import AppConfig, ConfigStore, ManagedItem
 from .process_manager import ProcessManager, ProcessState
 from .qdir_ahk_manager import QdirAhkManager, QdirAhkScript, QdirAhkState
+from .single_instance import SingleInstanceGuard
 
 
 class DropSurface(QWidget):
@@ -395,7 +396,14 @@ def status_label_name(status: str) -> str:
 
 
 def run() -> int:
-    app = QApplication([])
-    window = MainWindow(ConfigStore())
-    window.show()
-    return app.exec()
+    guard = SingleInstanceGuard()
+    if not guard.acquire():
+        return 0
+
+    try:
+        app = QApplication([])
+        window = MainWindow(ConfigStore())
+        window.show()
+        return app.exec()
+    finally:
+        guard.release()
