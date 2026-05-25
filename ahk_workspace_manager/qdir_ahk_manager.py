@@ -34,6 +34,7 @@ class QdirAhkManager:
         self.process_provider = process_provider or self._default_process_provider
         self.launcher = launcher or self._default_launcher
         self.failed_paths: set[str] = set()
+        self.active_script_path: str | None = None
 
     def scan(self, directory: str) -> list[QdirAhkScript]:
         root = Path(directory)
@@ -48,11 +49,12 @@ class QdirAhkManager:
     def states(self, directory: str) -> list[QdirAhkState]:
         scripts = self.scan(directory)
         running = self.running_script_pids(scripts)
+        active_key = self._visual_active_key(running)
         states: list[QdirAhkState] = []
         for script in scripts:
             key = self.normalize_path(script.path)
             pid = running.get(key)
-            if pid:
+            if pid and key == active_key:
                 self.failed_paths.discard(key)
                 states.append(QdirAhkState(script=script, status="RUNNING", pid=pid))
             elif key in self.failed_paths:
@@ -73,6 +75,7 @@ class QdirAhkManager:
         except Exception:
             self.failed_paths.add(target_key)
             return False
+        self.active_script_path = target_key
         self.failed_paths.discard(target_key)
         return True
 
@@ -82,7 +85,10 @@ class QdirAhkManager:
             return False
         stopped = self.stop_pid(pid)
         if stopped:
-            self.failed_paths.discard(self.normalize_path(script.path))
+            key = self.normalize_path(script.path)
+            self.failed_paths.discard(key)
+            if self.active_script_path == key:
+                self.active_script_path = None
         return stopped
 
     def stop_pid(self, pid: int) -> bool:
@@ -109,6 +115,19 @@ class QdirAhkManager:
                     running[key] = pid
         return running
 
+    def _visual_active_key(self, running: dict[str, int]) -> str | None:
+        if self.active_script_path and self.active_script_path in running:
+            return self.active_script_path
+        if self.active_script_path and self.active_script_path not in running:
+            self.active_script_path = None
+        if len(running) == 1:
+            self.active_script_path = next(iter(running))
+            return self.active_script_path
+        if len(running) > 1:
+            self.active_script_path = next(reversed(running))
+            return self.active_script_path
+        return None
+
     def normalize_path(self, path: str) -> str:
         try:
             return str(Path(path).resolve()).casefold()
@@ -120,4 +139,3 @@ class QdirAhkManager:
 
     def _default_launcher(self, path: str) -> object:
         return subprocess.Popen(f'"{path}"', shell=True)
-

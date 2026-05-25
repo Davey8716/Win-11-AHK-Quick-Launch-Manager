@@ -88,3 +88,72 @@ def test_failed_launch_state_clears_when_script_runs(tmp_path):
 
     assert manager.states(str(tmp_path))[0].status == "RUNNING"
 
+
+def test_active_script_is_only_visual_running_script(tmp_path):
+    first = tmp_path / "First.ahk"
+    second = tmp_path / "Second.ahk"
+    first.write_text("", encoding="utf-8")
+    second.write_text("", encoding="utf-8")
+    manager = QdirAhkManager(
+        process_provider=lambda: [
+            FakeProc(10, ["AutoHotkey.exe", str(first)]),
+            FakeProc(11, ["AutoHotkey.exe", str(second)]),
+        ]
+    )
+    manager.active_script_path = manager.normalize_path(str(second))
+
+    states = manager.states(str(tmp_path))
+
+    assert [(state.script.name, state.status) for state in states] == [
+        ("First.ahk", "STOPPED"),
+        ("Second.ahk", "RUNNING"),
+    ]
+
+
+def test_start_sets_new_script_active_and_visually_stops_previous(tmp_path, monkeypatch):
+    first = tmp_path / "First.ahk"
+    second = tmp_path / "Second.ahk"
+    first.write_text("", encoding="utf-8")
+    second.write_text("", encoding="utf-8")
+    launched = []
+    manager = QdirAhkManager(
+        process_provider=lambda: [
+            FakeProc(10, ["AutoHotkey.exe", str(first)]),
+            FakeProc(11, ["AutoHotkey.exe", str(second)]),
+        ],
+        launcher=lambda path: launched.append(path),
+    )
+    monkeypatch.setattr(manager, "stop_pid", lambda _pid: True)
+    second_script = [script for script in manager.scan(str(tmp_path)) if script.name == "Second.ahk"][0]
+
+    assert manager.start(second_script, str(tmp_path)) is True
+    states = manager.states(str(tmp_path))
+
+    assert manager.active_script_path == manager.normalize_path(str(second))
+    assert [(state.script.name, state.status) for state in states] == [
+        ("First.ahk", "STOPPED"),
+        ("Second.ahk", "RUNNING"),
+    ]
+
+
+def test_active_script_clears_when_process_disappears(tmp_path):
+    script = tmp_path / "FPS.ahk"
+    script.write_text("", encoding="utf-8")
+    manager = QdirAhkManager(process_provider=lambda: [])
+    manager.active_script_path = manager.normalize_path(str(script))
+
+    states = manager.states(str(tmp_path))
+
+    assert manager.active_script_path is None
+    assert states[0].status == "STOPPED"
+
+
+def test_single_external_running_script_is_inferred_active(tmp_path):
+    script = tmp_path / "FPS.ahk"
+    script.write_text("", encoding="utf-8")
+    manager = QdirAhkManager(process_provider=lambda: [FakeProc(10, ["AutoHotkey.exe", str(script)])])
+
+    states = manager.states(str(tmp_path))
+
+    assert manager.active_script_path == manager.normalize_path(str(script))
+    assert states[0].status == "RUNNING"
