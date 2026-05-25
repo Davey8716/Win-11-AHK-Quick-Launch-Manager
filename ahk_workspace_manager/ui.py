@@ -530,7 +530,10 @@ class ApplicationTrayIcon:
         self.tray_icon.show()
 
     def show_window(self) -> None:
-        self.window.show()
+        if self.window.isMinimized():
+            self.window.showNormal()
+        else:
+            self.window.show()
         self.window.raise_()
         self.window.activateWindow()
 
@@ -540,7 +543,7 @@ class ApplicationTrayIcon:
         self.app.quit()
 
     def _activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
-        if reason == QSystemTrayIcon.DoubleClick:
+        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
             self.show_window()
 
 

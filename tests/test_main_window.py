@@ -92,3 +92,69 @@ def test_configure_tray_application_shows_window_when_tray_is_unavailable(tmp_pa
     assert not window.close_to_tray
     assert window.isVisible()
     assert qt_app.quitOnLastWindowClosed()
+
+
+def test_single_clicking_tray_icon_opens_window(monkeypatch):
+    class FakeWindow:
+        def __init__(self):
+            self.shown = False
+            self.raised = False
+            self.activated = False
+
+        def isMinimized(self):
+            return False
+
+        def show(self):
+            self.shown = True
+
+        def showNormal(self):
+            raise AssertionError("showNormal should not be used for a hidden, non-minimized window")
+
+        def raise_(self):
+            self.raised = True
+
+        def activateWindow(self):
+            self.activated = True
+
+    tray_icon = ui.ApplicationTrayIcon.__new__(ui.ApplicationTrayIcon)
+    tray_icon.window = FakeWindow()
+
+    tray_icon._activated(ui.QSystemTrayIcon.Trigger)
+
+    assert tray_icon.window.shown
+    assert tray_icon.window.raised
+    assert tray_icon.window.activated
+
+
+def test_show_window_restores_minimized_window_before_focus():
+    class FakeWindow:
+        def __init__(self):
+            self.restored = False
+            self.shown = False
+            self.raised = False
+            self.activated = False
+
+        def isMinimized(self):
+            return True
+
+        def show(self):
+            self.shown = True
+
+        def showNormal(self):
+            self.restored = True
+
+        def raise_(self):
+            self.raised = True
+
+        def activateWindow(self):
+            self.activated = True
+
+    tray_icon = ui.ApplicationTrayIcon.__new__(ui.ApplicationTrayIcon)
+    tray_icon.window = FakeWindow()
+
+    tray_icon.show_window()
+
+    assert tray_icon.window.restored
+    assert not tray_icon.window.shown
+    assert tray_icon.window.raised
+    assert tray_icon.window.activated
