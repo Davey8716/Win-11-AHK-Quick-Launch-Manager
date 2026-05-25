@@ -10,13 +10,6 @@ CONFIG_FILE = Path("workspace_manager.json")
 
 
 @dataclass
-class TaskbarItem:
-    name: str
-    path: str
-    pinned: bool = False
-
-
-@dataclass
 class ManagedItem:
     name: str
     path: str
@@ -28,7 +21,6 @@ class ManagedItem:
 
 @dataclass
 class AppConfig:
-    taskbar_items: list[TaskbarItem] = field(default_factory=list)
     managed_items: list[ManagedItem] = field(default_factory=list)
     exclusive_groups: dict[str, list[str]] = field(default_factory=dict)
     show_unmanaged_ahk: bool = True
@@ -45,7 +37,6 @@ class ConfigStore:
 
         raw = json.loads(self.path.read_text(encoding="utf-8"))
         return AppConfig(
-            taskbar_items=[TaskbarItem(**item) for item in raw.get("taskbar_items", [])],
             managed_items=[ManagedItem(**item) for item in raw.get("managed_items", [])],
             exclusive_groups=dict(raw.get("exclusive_groups", {})),
             show_unmanaged_ahk=bool(raw.get("show_unmanaged_ahk", True)),
@@ -54,11 +45,9 @@ class ConfigStore:
 
     def save(self, config: AppConfig) -> None:
         data: dict[str, Any] = {
-            "taskbar_items": [asdict(item) for item in config.taskbar_items],
             "managed_items": [asdict(item) for item in config.managed_items],
             "exclusive_groups": config.exclusive_groups,
             "show_unmanaged_ahk": config.show_unmanaged_ahk,
             "refresh_interval_ms": config.refresh_interval_ms,
         }
         self.path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-
