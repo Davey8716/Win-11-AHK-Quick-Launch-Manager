@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import os
+import sys
+from ctypes import wintypes
 from pathlib import Path
 
+import win32con
+import win32gui
 from PySide6.QtCore import QFileInfo, QTimer, Qt
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QFileIconProvider
@@ -25,7 +30,14 @@ from PySide6.QtWidgets import (
 
 from .config import AppConfig, ConfigStore
 from .qdir_ahk_manager import QdirAhkManager, QdirAhkScript, QdirAhkState
-from .single_instance import SingleInstanceGuard
+from .single_instance import SingleInstanceGuard, WM_APP_RESTORE_INSTANCE
+
+
+TRAY_ICON_ENV_VAR = "EXE_BUILDER_TRAY_ICON_PATH"
+TRAY_ICON_BUNDLE_NAME = "_exe_builder_tray_icon.ico"
+LOCAL_ICON_CANDIDATES = (
+    Path(__file__).resolve().parent.parent / "Icon" / "Tray Icon.ico",
+)
 
 
 class MutuallyExclusiveAhkSurface(QWidget):
@@ -278,6 +290,34 @@ class MainWindow(QMainWindow):
             return
         self.qdir_ahk_surface.refresh()
 
+    def nativeEvent(self, event_type, message):
+        try:
+            event_name = bytes(event_type).decode(errors="ignore")
+        except Exception:
+            event_name = str(event_type)
+
+        if event_name == "windows_generic_MSG":
+            msg = wintypes.MSG.from_address(int(message))
+            if msg.message == WM_APP_RESTORE_INSTANCE:
+                QTimer.singleShot(0, self.restore_from_activation)
+                return True, 0
+
+        return False, 0
+
+    def restore_from_activation(self) -> None:
+        self.show()
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        self.repaint()
+        self.update()
+        try:
+            hwnd = int(self.winId())
+            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+            win32gui.SetForegroundWindow(hwnd)
+        except Exception:
+            pass
+
     def _apply_style(self) -> None:
         self.setStyleSheet(
             """
@@ -326,7 +366,8 @@ class ApplicationTrayIcon:
     def __init__(self, app: QApplication, window: MainWindow, icon: QIcon) -> None:
         self.app = app
         self.window = window
-        self.tray_icon = QSystemTrayIcon(icon, window)
+        self.tray_icon = QSystemTrayIcon(window)
+        self.tray_icon.setIcon(icon)
         self.tray_icon.setToolTip("Tray Manager")
 
         self.menu = QMenu(window)
@@ -349,13 +390,14 @@ class ApplicationTrayIcon:
     def show(self) -> None:
         self.tray_icon.show()
 
-    def show_window(self) -> None:
-        if self.window.isMinimized():
-            self.window.showNormal()
+    def toggle_window(self) -> None:
+        if self.window.isVisible() and not self.window.isMinimized():
+            self.window.hide()
         else:
-            self.window.show()
-        self.window.raise_()
-        self.window.activateWindow()
+            self.show_window()
+
+    def show_window(self) -> None:
+        self.window.restore_from_activation()
 
     def exit_app(self) -> None:
         self.window.request_exit()
@@ -364,16 +406,78 @@ class ApplicationTrayIcon:
 
     def _activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
-            self.show_window()
+            self.toggle_window()
 
 
-def application_icon() -> QIcon:
+def application_icon(window=None) -> QIcon:
+    icon_path = application_icon_path(window)
+    if icon_path is not None:
+        return QIcon(str(icon_path))
+
+    if window is not None and hasattr(window, "windowIcon"):
+        icon = window.windowIcon()
+        if not icon.isNull():
+            return icon
+
+    themed_icon = QIcon.fromTheme("applications-system")
+    if not themed_icon.isNull():
+        return themed_icon
     return QApplication.style().standardIcon(QStyle.SP_ComputerIcon)
+
+
+def application_icon_path(window=None) -> Path | None:
+    for candidate in application_icon_candidates(window):
+        if candidate.is_file():
+            icon = QIcon(str(candidate))
+            if not icon.isNull():
+                return candidate
+    return None
+
+
+def application_icon_candidates(window=None) -> list[Path]:
+    candidates: list[Path] = []
+
+    env_icon = os.environ.get(TRAY_ICON_ENV_VAR, "").strip()
+    if env_icon:
+        candidates.append(Path(env_icon))
+
+    bundle_dir = getattr(sys, "_MEIPASS", "")
+    if bundle_dir:
+        candidates.extend(_expanded_bundle_icon_candidates(Path(bundle_dir)))
+
+    executable_dir = Path(sys.executable).resolve().parent
+    candidates.extend(
+        _expanded_bundle_icon_candidates(executable_dir)
+        + _expanded_bundle_icon_candidates(executable_dir / "_internal")
+    )
+
+    candidates.extend(LOCAL_ICON_CANDIDATES)
+    return _dedupe_icon_candidates(candidates)
+
+
+def _expanded_bundle_icon_candidates(base_dir: Path) -> list[Path]:
+    bundle_path = base_dir / TRAY_ICON_BUNDLE_NAME
+    candidates = [bundle_path]
+    if bundle_path.is_dir():
+        candidates.extend(sorted(bundle_path.glob("*.ico")))
+    return candidates
+
+
+def _dedupe_icon_candidates(candidates: list[Path]) -> list[Path]:
+    unique_candidates: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = os.path.normcase(os.path.abspath(candidate))
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        unique_candidates.append(candidate)
+    return unique_candidates
 
 
 def configure_tray_application(app: QApplication, window: MainWindow) -> ApplicationTrayIcon | None:
     app.setQuitOnLastWindowClosed(False)
-    icon = application_icon()
+    icon = application_icon(window)
     app.setWindowIcon(icon)
     window.setWindowIcon(icon)
     if not QSystemTrayIcon.isSystemTrayAvailable():
