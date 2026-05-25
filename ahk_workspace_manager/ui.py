@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QFileIconProvider
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
+    QFileDialog,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -24,6 +25,7 @@ from PySide6.QtWidgets import (
 from .ahk_manager import AHKManager
 from .config import AppConfig, ConfigStore, ManagedItem
 from .process_manager import ProcessManager, ProcessState
+from .qdir_ahk_manager import QdirAhkManager, QdirAhkScript, QdirAhkState
 
 
 class DropSurface(QWidget):
@@ -189,6 +191,116 @@ class ProcessRow(QFrame):
             layout.addWidget(button)
 
 
+class MutuallyExclusiveAhkSurface(QWidget):
+    def __init__(self, config: AppConfig, store: ConfigStore, manager: QdirAhkManager) -> None:
+        super().__init__()
+        self.config = config
+        self.store = store
+        self.manager = manager
+        self.states: list[QdirAhkState] = []
+
+        layout = QVBoxLayout(self)
+        header = QHBoxLayout()
+        title = QLabel("Mutually Exclusive AHK Manager")
+        title.setObjectName("surfaceTitle")
+        header.addWidget(title)
+        header.addStretch()
+        qdir_button = QPushButton("QDIR")
+        qdir_button.clicked.connect(self.choose_qdir)
+        header.addWidget(qdir_button)
+        layout.addLayout(header)
+
+        self.path_label = QLabel(self.config.ahk_qdir_path)
+        self.path_label.setObjectName("pathLabel")
+        self.path_label.setWordWrap(True)
+        layout.addWidget(self.path_label)
+
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.content = QWidget()
+        self.list_layout = QVBoxLayout(self.content)
+        self.list_layout.setAlignment(Qt.AlignTop)
+        self.scroll.setWidget(self.content)
+        layout.addWidget(self.scroll)
+        self.refresh()
+
+    def choose_qdir(self) -> None:
+        selected = QFileDialog.getExistingDirectory(self, "Select AHK QDIR", self.config.ahk_qdir_path)
+        if not selected:
+            return
+        self.config.ahk_qdir_path = selected
+        self.store.save(self.config)
+        self.refresh()
+
+    def refresh(self) -> None:
+        self.path_label.setText(self.config.ahk_qdir_path)
+        self.states = self.manager.states(self.config.ahk_qdir_path)
+        self._clear_list()
+        if not self.states:
+            label = QLabel("No .ahk files found in QDIR")
+            label.setObjectName("emptyState")
+            self.list_layout.addWidget(label)
+            return
+
+        for state in self.states:
+            row = QdirAhkRow(state)
+            row.start_requested.connect(lambda checked=False, current=state.script: self.start(current))
+            row.stop_requested.connect(lambda checked=False, current=state.script: self.stop(current))
+            self.list_layout.addWidget(row)
+
+    def start(self, script: QdirAhkScript) -> None:
+        self.manager.start(script, self.config.ahk_qdir_path)
+        self.refresh()
+
+    def stop(self, script: QdirAhkScript) -> None:
+        self.manager.stop(script)
+        self.refresh()
+
+    def _clear_list(self) -> None:
+        while self.list_layout.count():
+            child = self.list_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+
+class QdirAhkRow(QFrame):
+    from PySide6.QtCore import Signal
+
+    start_requested = Signal()
+    stop_requested = Signal()
+
+    def __init__(self, state: QdirAhkState) -> None:
+        super().__init__()
+        self.setObjectName("processRow")
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+
+        icon = QLabel()
+        icon.setPixmap(icon_for_path(state.script.path).pixmap(24, 24))
+        layout.addWidget(icon)
+
+        name = QLabel(state.script.name)
+        name.setMinimumWidth(240)
+        layout.addWidget(name)
+
+        status = QLabel(state.status)
+        status.setObjectName(status_label_name(state.status))
+        layout.addWidget(status)
+
+        layout.addStretch()
+        start = QToolButton()
+        start.setText("START")
+        start.setEnabled(state.status != "RUNNING")
+        start.clicked.connect(self.start_requested.emit)
+        layout.addWidget(start)
+
+        stop = QToolButton()
+        stop.setText("STOP")
+        stop.setEnabled(state.status == "RUNNING")
+        stop.clicked.connect(self.stop_requested.emit)
+        layout.addWidget(stop)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, store: ConfigStore) -> None:
         super().__init__()
@@ -196,15 +308,21 @@ class MainWindow(QMainWindow):
         self.config = store.load()
         self.process_manager = ProcessManager(self.config)
         self.ahk_manager = AHKManager(self.config, self.process_manager)
+        self.qdir_ahk_manager = QdirAhkManager()
 
         self.setWindowTitle("Tray Manager")
-        self.resize(860, 560)
+        self.resize(900, 760)
 
+        central = QWidget()
+        layout = QVBoxLayout(central)
         self.tray_surface = TraySurface(self.config, self.store, self.process_manager, self.ahk_manager)
-        self.setCentralWidget(self.tray_surface)
+        self.qdir_ahk_surface = MutuallyExclusiveAhkSurface(self.config, self.store, self.qdir_ahk_manager)
+        layout.addWidget(self.tray_surface, 2)
+        layout.addWidget(self.qdir_ahk_surface, 1)
+        self.setCentralWidget(central)
 
         self.timer = QTimer(self)
-        self.timer.timeout.connect(self.tray_surface.refresh)
+        self.timer.timeout.connect(self.refresh_surfaces)
         self.timer.start(self.config.refresh_interval_ms)
 
         self._apply_style()
@@ -212,6 +330,10 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:
         self.store.save(self.config)
         super().closeEvent(event)
+
+    def refresh_surfaces(self) -> None:
+        self.tray_surface.refresh()
+        self.qdir_ahk_surface.refresh()
 
     def _apply_style(self) -> None:
         self.setStyleSheet(
@@ -228,6 +350,8 @@ class MainWindow(QMainWindow):
             #stateLabel { color: #667085; font-size: 8pt; font-weight: 700; }
             #running { color: #0b7a3b; font-weight: 700; }
             #stopped { color: #8a1f11; font-weight: 700; }
+            #failed { color: #b42318; font-weight: 700; }
+            #pathLabel { color: #667085; }
             QPushButton, QToolButton {
                 background: #ffffff;
                 border: 1px solid #c8ced8;
@@ -253,6 +377,13 @@ def optional_group_name(group: str | None, ok: bool) -> str | None:
     if not ok or group is None:
         return None
     return group.strip() or None
+
+
+def status_label_name(status: str) -> str:
+    return {
+        "RUNNING": "running",
+        "FAILED": "failed",
+    }.get(status, "stopped")
 
 
 def run() -> int:

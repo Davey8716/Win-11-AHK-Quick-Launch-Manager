@@ -7,6 +7,7 @@ from typing import Any
 
 
 CONFIG_FILE = Path("workspace_manager.json")
+DEFAULT_AHK_QDIR = r"C:\Users\davey\Desktop\Quick Launch Build Scripts"
 
 
 @dataclass
@@ -25,6 +26,7 @@ class AppConfig:
     exclusive_groups: dict[str, list[str]] = field(default_factory=dict)
     show_unmanaged_ahk: bool = True
     refresh_interval_ms: int = 1000
+    ahk_qdir_path: str = DEFAULT_AHK_QDIR
 
 
 class ConfigStore:
@@ -41,6 +43,7 @@ class ConfigStore:
             exclusive_groups=dict(raw.get("exclusive_groups", {})),
             show_unmanaged_ahk=bool(raw.get("show_unmanaged_ahk", True)),
             refresh_interval_ms=int(raw.get("refresh_interval_ms", 1000)),
+            ahk_qdir_path=str(raw.get("ahk_qdir_path", DEFAULT_AHK_QDIR)),
         )
 
     def save(self, config: AppConfig) -> None:
@@ -49,5 +52,6 @@ class ConfigStore:
             "exclusive_groups": config.exclusive_groups,
             "show_unmanaged_ahk": config.show_unmanaged_ahk,
             "refresh_interval_ms": config.refresh_interval_ms,
+            "ahk_qdir_path": config.ahk_qdir_path,
         }
         self.path.write_text(json.dumps(data, indent=2), encoding="utf-8")
