@@ -311,7 +311,14 @@ class MainWindow(QMainWindow):
         self.qdir_ahk_manager = QdirAhkManager()
 
         self.setWindowTitle("Tray Manager")
-        self.setWindowFlag(Qt.WindowMaximizeButtonHint, False)
+        self.setWindowFlags(
+            Qt.Window
+            | Qt.WindowTitleHint
+            | Qt.WindowSystemMenuHint
+            | Qt.WindowMinimizeButtonHint
+            | Qt.WindowCloseButtonHint
+            | Qt.MSWindowsFixedSizeDialogHint
+        )
         self.setFixedSize(775, 1000)
 
         central = QWidget()

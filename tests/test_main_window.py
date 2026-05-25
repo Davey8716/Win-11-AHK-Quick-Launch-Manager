@@ -10,7 +10,7 @@ def app():
     return existing or QApplication([])
 
 
-def test_main_window_is_fixed_size_without_maximize_button(tmp_path):
+def test_main_window_is_fixed_size(tmp_path):
     app()
     window = MainWindow(ConfigStore(tmp_path / "config.json"))
 
@@ -20,5 +20,8 @@ def test_main_window_is_fixed_size_without_maximize_button(tmp_path):
     assert window.maximumWidth() == 775
     assert window.minimumHeight() == 1000
     assert window.maximumHeight() == 1000
+    assert window.windowFlags() & Qt.WindowSystemMenuHint
+    assert window.windowFlags() & Qt.WindowMinimizeButtonHint
+    assert window.windowFlags() & Qt.WindowCloseButtonHint
+    assert window.windowFlags() & Qt.MSWindowsFixedSizeDialogHint
     assert not window.windowFlags() & Qt.WindowMaximizeButtonHint
-
