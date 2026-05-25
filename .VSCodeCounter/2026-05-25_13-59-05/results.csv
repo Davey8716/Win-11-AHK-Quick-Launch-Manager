@@ -1,0 +1,21 @@
+"filename", "language", "Markdown", "JSON", "Python", "pip requirements", "comment", "blank", "total"
+"c:\Users\davey\Desktop\Projects\Win-11-Taskbar-Tray\README.md", "Markdown", 15, 0, 0, 0, 0, 7, 22
+"c:\Users\davey\Desktop\Projects\Win-11-Taskbar-Tray\ahk_workspace_manager\__init__.py", "Python", 0, 0, 0, 0, 1, 2, 3
+"c:\Users\davey\Desktop\Projects\Win-11-Taskbar-Tray\ahk_workspace_manager\ahk_manager.py", "Python", 0, 0, 40, 0, 0, 11, 51
+"c:\Users\davey\Desktop\Projects\Win-11-Taskbar-Tray\ahk_workspace_manager\config.py", "Python", 0, 0, 45, 0, 0, 13, 58
+"c:\Users\davey\Desktop\Projects\Win-11-Taskbar-Tray\ahk_workspace_manager\process_manager.py", "Python", 0, 0, 195, 0, 0, 32, 227
+"c:\Users\davey\Desktop\Projects\Win-11-Taskbar-Tray\ahk_workspace_manager\qdir_ahk_manager.py", "Python", 0, 0, 120, 0, 0, 22, 142
+"c:\Users\davey\Desktop\Projects\Win-11-Taskbar-Tray\ahk_workspace_manager\tray_monitor.py", "Python", 0, 0, 328, 0, 0, 53, 381
+"c:\Users\davey\Desktop\Projects\Win-11-Taskbar-Tray\ahk_workspace_manager\ui.py", "Python", 0, 0, 301, 0, 25, 68, 394
+"c:\Users\davey\Desktop\Projects\Win-11-Taskbar-Tray\main.py", "Python", 0, 0, 3, 0, 0, 3, 6
+"c:\Users\davey\Desktop\Projects\Win-11-Taskbar-Tray\requirements.txt", "pip requirements", 0, 0, 0, 3, 0, 2, 5
+"c:\Users\davey\Desktop\Projects\Win-11-Taskbar-Tray\tests\test_ahk_manager.py", "Python", 0, 0, 25, 0, 0, 10, 35
+"c:\Users\davey\Desktop\Projects\Win-11-Taskbar-Tray\tests\test_config.py", "Python", 0, 0, 32, 0, 15, 14, 61
+"c:\Users\davey\Desktop\Projects\Win-11-Taskbar-Tray\tests\test_process_manager.py", "Python", 0, 0, 68, 0, 0, 23, 91
+"c:\Users\davey\Desktop\Projects\Win-11-Taskbar-Tray\tests\test_process_row.py", "Python", 0, 0, 21, 0, 0, 11, 32
+"c:\Users\davey\Desktop\Projects\Win-11-Taskbar-Tray\tests\test_qdir_ahk_manager.py", "Python", 0, 0, 116, 0, 0, 44, 160
+"c:\Users\davey\Desktop\Projects\Win-11-Taskbar-Tray\tests\test_qdir_ahk_ui.py", "Python", 0, 0, 24, 0, 0, 13, 37
+"c:\Users\davey\Desktop\Projects\Win-11-Taskbar-Tray\tests\test_tray_monitor.py", "Python", 0, 0, 86, 0, 0, 22, 108
+"c:\Users\davey\Desktop\Projects\Win-11-Taskbar-Tray\tests\test_tray_surface.py", "Python", 0, 0, 7, 0, 0, 8, 15
+"c:\Users\davey\Desktop\Projects\Win-11-Taskbar-Tray\workspace_manager.json", "JSON", 0, 7, 0, 0, 0, 0, 7
+"Total", "-", 15, 7, 1411, 3, 41, 358, 1835

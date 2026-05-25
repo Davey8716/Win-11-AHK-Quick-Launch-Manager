@@ -73,6 +73,37 @@ def test_live_tray_icons_do_not_emit_fallback_status():
     assert [state.item.item_type for state in states] == [TRAY_VISIBLE]
 
 
+def test_poll_sorts_process_rows_alphabetically(tmp_path):
+    beta = tmp_path / "Beta.exe"
+    beta.write_text("", encoding="utf-8")
+    config = AppConfig(
+        managed_items=[ManagedItem(name="Beta", path=str(beta), item_type="APP")],
+        show_unmanaged_ahk=False,
+    )
+    monitor = FakeTrayMonitor(icons=[TrayIcon(name="alpha", source=TRAY_VISIBLE, pid=os.getpid(), path=sys.executable)])
+    manager = ProcessManager(config, tray_monitor=monitor)
+
+    states = manager.poll()
+
+    assert [state.item.name for state in states] == ["alpha", "Beta"]
+
+
+def test_fallback_status_row_stays_before_alphabetized_rows():
+    config = AppConfig(show_unmanaged_ahk=False)
+    monitor = FakeTrayMonitor(
+        fallback=[
+            TrayIcon(name="Zulu", source=TRAY_DETECTED, pid=os.getpid(), path=sys.executable),
+            TrayIcon(name="Alpha", source=TRAY_DETECTED, pid=None, path=""),
+        ]
+    )
+    manager = ProcessManager(config, tray_monitor=monitor)
+
+    states = manager.poll()
+
+    assert states[0].item.item_type == TRAY_STATUS
+    assert [state.item.name for state in states[1:]] == ["Alpha", "Zulu"]
+
+
 def test_unmanaged_tray_stop_requires_pid():
     config = AppConfig(show_unmanaged_ahk=False)
     monitor = FakeTrayMonitor(

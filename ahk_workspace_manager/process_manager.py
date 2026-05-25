@@ -87,7 +87,7 @@ class ProcessManager:
                 )
 
         states.extend(self._tray_states(states))
-        return states
+        return self._sort_states(states)
 
     def launch(self, item: ManagedItem) -> int | None:
         path = Path(item.path)
@@ -224,3 +224,8 @@ class ProcessManager:
             return psutil.Process(pid).name().lower() not in ESSENTIAL_PROCESSES
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             return False
+
+    def _sort_states(self, states: list[ProcessState]) -> list[ProcessState]:
+        status_rows = [state for state in states if state.item.item_type == TRAY_STATUS]
+        app_rows = [state for state in states if state.item.item_type != TRAY_STATUS]
+        return [*status_rows, *sorted(app_rows, key=lambda state: state.item.name.casefold())]
