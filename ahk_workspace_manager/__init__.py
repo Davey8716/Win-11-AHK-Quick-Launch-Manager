@@ -1,0 +1,2 @@
+"""AHK Workspace Manager package."""
+

@@ -1,0 +1,5 @@
+from ahk_workspace_manager.ui import run
+
+if __name__ == "__main__":
+    raise SystemExit(run())
+
