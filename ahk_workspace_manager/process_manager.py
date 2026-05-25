@@ -45,6 +45,8 @@ class ProcessManager:
         known = {Path(item.path).resolve().as_posix().lower() for item in self.config.managed_items if Path(item.path).exists()}
 
         for candidate in candidates:
+            if candidate.suffix.lower() == ".ahk" and self._is_qdir_script_path(str(candidate)):
+                continue
             key = candidate.resolve().as_posix().lower()
             if key in known:
                 continue
@@ -59,6 +61,8 @@ class ProcessManager:
     def poll(self) -> list[ProcessState]:
         states: list[ProcessState] = []
         for item in self.config.managed_items:
+            if item.item_type == "AHK" and self._is_qdir_script_path(item.path):
+                continue
             pid = self.find_pid(item)
             item.pid = pid
             states.append(ProcessState(item=item, status="RUNNING" if pid else "STOPPED", pid=pid, can_stop=bool(pid)))
@@ -70,6 +74,8 @@ class ProcessManager:
                 if not script:
                     continue
                 script_path = Path(script)
+                if self._is_qdir_script_path(str(script_path)):
+                    continue
                 if script_path.exists() and script_path.resolve().as_posix().lower() in managed_paths:
                     continue
                 states.append(
@@ -127,6 +133,8 @@ class ProcessManager:
     def kill_all_managed(self) -> int:
         killed = 0
         for item in self.config.managed_items:
+            if item.item_type == "AHK" and self._is_qdir_script_path(item.path):
+                continue
             if self.terminate(item):
                 killed += 1
         return killed
@@ -190,6 +198,8 @@ class ProcessManager:
             )
 
         for icon in icons:
+            if self._tray_icon_matches_qdir(icon):
+                continue
             path_key = Path(icon.path).resolve().as_posix().lower() if icon.path and Path(icon.path).exists() else ""
             if icon.pid and icon.pid in seen_pids:
                 continue
@@ -229,3 +239,38 @@ class ProcessManager:
         status_rows = [state for state in states if state.item.item_type == TRAY_STATUS]
         app_rows = [state for state in states if state.item.item_type != TRAY_STATUS]
         return [*status_rows, *sorted(app_rows, key=lambda state: state.item.name.casefold())]
+
+    def _qdir_script_keys(self) -> set[str]:
+        root = Path(self.config.ahk_qdir_path)
+        if not root.exists() or not root.is_dir():
+            return set()
+        return {self._path_key(path) for path in root.glob("*.ahk") if path.is_file()}
+
+    def _is_qdir_script_path(self, path: str) -> bool:
+        return self._path_key(Path(path)) in self._qdir_script_keys()
+
+    def _tray_icon_matches_qdir(self, icon: TrayIcon) -> bool:
+        if icon.path and self._is_qdir_script_path(icon.path):
+            return True
+        return self._pid_matches_qdir_script(icon.pid)
+
+    def _pid_matches_qdir_script(self, pid: int | None) -> bool:
+        if not pid:
+            return False
+        try:
+            proc = psutil.Process(pid)
+            name = (proc.name() or "").lower()
+            if "autohotkey" not in name:
+                return False
+            for part in proc.cmdline() or []:
+                if part.lower().endswith(".ahk") and self._is_qdir_script_path(part):
+                    return True
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return False
+        return False
+
+    def _path_key(self, path: Path) -> str:
+        try:
+            return path.resolve().as_posix().lower()
+        except OSError:
+            return path.absolute().as_posix().lower()

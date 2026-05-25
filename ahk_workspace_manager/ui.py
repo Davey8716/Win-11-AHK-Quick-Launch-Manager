@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QStyle,
     QToolButton,
     QVBoxLayout,
@@ -199,6 +200,9 @@ class MutuallyExclusiveAhkSurface(QWidget):
         self.store = store
         self.manager = manager
         self.states: list[QdirAhkState] = []
+        self.busy = False
+        self.rows_by_path: dict[str, QdirAhkRow] = {}
+        self.empty_label: QLabel | None = None
 
         layout = QVBoxLayout(self)
         header = QHBoxLayout()
@@ -221,6 +225,7 @@ class MutuallyExclusiveAhkSurface(QWidget):
         self.content = QWidget()
         self.list_layout = QVBoxLayout(self.content)
         self.list_layout.setAlignment(Qt.AlignTop)
+        self.list_layout.setSpacing(8)
         self.scroll.setWidget(self.content)
         layout.addWidget(self.scroll)
         self.refresh()
@@ -231,37 +236,94 @@ class MutuallyExclusiveAhkSurface(QWidget):
             return
         self.config.ahk_qdir_path = selected
         self.store.save(self.config)
+        self._clear_list()
+        self.rows_by_path.clear()
         self.refresh()
 
     def refresh(self) -> None:
         self.path_label.setText(self.config.ahk_qdir_path)
         self.states = self.manager.states(self.config.ahk_qdir_path)
-        self._clear_list()
         if not self.states:
-            label = QLabel("No .ahk files found in QDIR")
-            label.setObjectName("emptyState")
-            self.list_layout.addWidget(label)
+            self._remove_missing_rows(set())
+            self._show_empty_state()
             return
 
-        for state in self.states:
-            row = QdirAhkRow(state)
-            row.start_requested.connect(lambda checked=False, current=state.script: self.start(current))
-            row.stop_requested.connect(lambda checked=False, current=state.script: self.stop(current))
-            self.list_layout.addWidget(row)
+        self._hide_empty_state()
+        row_width = self._row_width()
+        active_keys: set[str] = set()
+        for index, state in enumerate(self.states):
+            key = self.manager.normalize_path(state.script.path)
+            active_keys.add(key)
+            row = self.rows_by_path.get(key)
+            if row is None:
+                row = QdirAhkRow(state, actions_enabled=not self.busy, row_width=row_width)
+                row.start_requested.connect(lambda current_key=key: self.start(self.rows_by_path[current_key].script))
+                row.stop_requested.connect(lambda current_key=key: self.stop(self.rows_by_path[current_key].script))
+                self.rows_by_path[key] = row
+            else:
+                row.update_state(state, actions_enabled=not self.busy, row_width=row_width)
+            current_index = self.list_layout.indexOf(row)
+            if current_index != index:
+                if current_index != -1:
+                    self.list_layout.removeWidget(row)
+                self.list_layout.insertWidget(index, row)
+        self._remove_missing_rows(active_keys)
 
     def start(self, script: QdirAhkScript) -> None:
-        self.manager.start(script, self.config.ahk_qdir_path)
-        self.refresh()
+        self._run_guarded_action(lambda: self.manager.start(script, self.config.ahk_qdir_path))
 
     def stop(self, script: QdirAhkScript) -> None:
-        self.manager.stop(script)
+        self._run_guarded_action(lambda: self.manager.stop(script))
+
+    def _run_guarded_action(self, action) -> None:
+        if self.busy:
+            return
+        self.busy = True
         self.refresh()
+        QTimer.singleShot(0, lambda: self._finish_guarded_action(action))
+
+    def _finish_guarded_action(self, action) -> None:
+        try:
+            action()
+        finally:
+            self.busy = False
+            self.refresh()
 
     def _clear_list(self) -> None:
         while self.list_layout.count():
             child = self.list_layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
+        self.empty_label = None
+
+    def _row_width(self) -> int:
+        margins = self.list_layout.contentsMargins()
+        viewport_width = self.scroll.viewport().width()
+        if viewport_width < 600:
+            viewport_width = 720
+        return max(620, viewport_width - margins.left() - margins.right() - 2)
+
+    def _remove_missing_rows(self, active_keys: set[str]) -> None:
+        for key in list(self.rows_by_path):
+            if key in active_keys:
+                continue
+            row = self.rows_by_path.pop(key)
+            self.list_layout.removeWidget(row)
+            row.deleteLater()
+
+    def _show_empty_state(self) -> None:
+        if self.empty_label is not None:
+            return
+        self.empty_label = QLabel("No .ahk files found in QDIR")
+        self.empty_label.setObjectName("emptyState")
+        self.list_layout.addWidget(self.empty_label)
+
+    def _hide_empty_state(self) -> None:
+        if self.empty_label is None:
+            return
+        self.list_layout.removeWidget(self.empty_label)
+        self.empty_label.deleteLater()
+        self.empty_label = None
 
 
 class QdirAhkRow(QFrame):
@@ -270,36 +332,63 @@ class QdirAhkRow(QFrame):
     start_requested = Signal()
     stop_requested = Signal()
 
-    def __init__(self, state: QdirAhkState) -> None:
+    def __init__(self, state: QdirAhkState, actions_enabled: bool = True, row_width: int = 720) -> None:
         super().__init__()
+        self.script = state.script
         self.setObjectName("processRow")
+        self.setFixedWidth(row_width)
+        self.setFixedHeight(52)
+        self.setMinimumHeight(52)
+        self.setMaximumHeight(52)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 8, 10, 8)
 
-        icon = QLabel()
-        icon.setPixmap(icon_for_path(state.script.path).pixmap(24, 24))
-        layout.addWidget(icon)
+        self.icon = QLabel()
+        self.icon.setPixmap(icon_for_path(state.script.path).pixmap(24, 24))
+        self.icon.setFixedSize(24, 24)
+        layout.addWidget(self.icon)
 
-        name = QLabel(state.script.name)
-        name.setMinimumWidth(240)
-        layout.addWidget(name)
+        self.name = QLabel(state.script.name)
+        self.name.setFixedWidth(330)
+        layout.addWidget(self.name)
 
-        status = QLabel(state.status)
-        status.setObjectName(status_label_name(state.status))
-        layout.addWidget(status)
+        self.status = QLabel(state.status)
+        self.status.setObjectName(status_label_name(state.status))
+        self.status.setFixedWidth(76)
+        self.status.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        layout.addWidget(self.status)
 
         layout.addStretch()
-        start = QToolButton()
-        start.setText("START")
-        start.setEnabled(state.status != "RUNNING")
-        start.clicked.connect(self.start_requested.emit)
-        layout.addWidget(start)
+        self.start = QToolButton()
+        self.start.setObjectName("qdirActionButton")
+        self.start.setText("START")
+        self.start.setFixedSize(68, 34)
+        self.start.pressed.connect(lambda button=self.start: self._emit_once(button, self.start_requested.emit))
+        layout.addWidget(self.start)
 
-        stop = QToolButton()
-        stop.setText("STOP")
-        stop.setEnabled(state.status == "RUNNING")
-        stop.clicked.connect(self.stop_requested.emit)
-        layout.addWidget(stop)
+        self.stop = QToolButton()
+        self.stop.setObjectName("qdirActionButton")
+        self.stop.setText("STOP")
+        self.stop.setFixedSize(68, 34)
+        self.stop.pressed.connect(lambda button=self.stop: self._emit_once(button, self.stop_requested.emit))
+        layout.addWidget(self.stop)
+        self.update_state(state, actions_enabled, row_width)
+
+    def _emit_once(self, button: QToolButton, emit) -> None:
+        button.setEnabled(False)
+        emit()
+
+    def update_state(self, state: QdirAhkState, actions_enabled: bool = True, row_width: int = 720) -> None:
+        self.script = state.script
+        self.setFixedWidth(row_width)
+        self.name.setText(state.script.name)
+        self.status.setText(state.status)
+        self.status.setObjectName(status_label_name(state.status))
+        self.status.style().unpolish(self.status)
+        self.status.style().polish(self.status)
+        self.start.setEnabled(actions_enabled and state.status != "RUNNING")
+        self.stop.setEnabled(actions_enabled and state.status == "RUNNING")
 
 
 class MainWindow(QMainWindow):
@@ -330,9 +419,13 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.qdir_ahk_surface, 1)
         self.setCentralWidget(central)
 
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.refresh_surfaces)
-        self.timer.start(self.config.refresh_interval_ms)
+        self.tray_timer = QTimer(self)
+        self.tray_timer.timeout.connect(self.refresh_tray_surface)
+        self.tray_timer.start(self.config.refresh_interval_ms)
+
+        self.qdir_timer = QTimer(self)
+        self.qdir_timer.timeout.connect(self.refresh_qdir_surface)
+        self.qdir_timer.start(self.config.refresh_interval_ms)
 
         self._apply_style()
 
@@ -340,8 +433,14 @@ class MainWindow(QMainWindow):
         self.store.save(self.config)
         super().closeEvent(event)
 
-    def refresh_surfaces(self) -> None:
+    def refresh_tray_surface(self) -> None:
+        if self.qdir_ahk_surface.busy:
+            return
         self.tray_surface.refresh()
+
+    def refresh_qdir_surface(self) -> None:
+        if self.qdir_ahk_surface.busy:
+            return
         self.qdir_ahk_surface.refresh()
 
     def _apply_style(self) -> None:
@@ -366,6 +465,20 @@ class MainWindow(QMainWindow):
                 border: 1px solid #c8ced8;
                 border-radius: 6px;
                 padding: 6px 10px;
+            }
+            #qdirActionButton {
+                min-width: 68px;
+                max-width: 68px;
+                min-height: 34px;
+                max-height: 34px;
+                padding: 0;
+                border: 1px solid #c8ced8;
+            }
+            #qdirActionButton:disabled {
+                background: #f3f4f6;
+                border: 1px solid #c8ced8;
+                color: #98a2b3;
+                padding: 0;
             }
             QPushButton:hover, QToolButton:hover { background: #edf2f7; }
             #dangerButton { border-color: #b42318; color: #b42318; }
