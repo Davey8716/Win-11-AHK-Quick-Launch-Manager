@@ -7,7 +7,6 @@ from typing import Any
 
 import psutil
 
-
 TRAY_VISIBLE = "TRAY_VISIBLE"
 TRAY_OVERFLOW = "TRAY_OVERFLOW"
 TRAY_DETECTED = "TRAY_DETECTED"
