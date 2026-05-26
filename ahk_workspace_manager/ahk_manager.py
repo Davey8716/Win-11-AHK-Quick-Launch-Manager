@@ -1,7 +1,5 @@
 from __future__ import annotations
-
 from pathlib import Path
-
 from .config import AppConfig, ManagedItem
 from .process_manager import ProcessManager
 
