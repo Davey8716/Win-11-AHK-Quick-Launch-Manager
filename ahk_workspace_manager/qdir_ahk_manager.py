@@ -135,11 +135,7 @@ class QdirAhkManager:
     def stop_pid(self, pid: int) -> bool:
         try:
             proc = psutil.Process(pid)
-            proc.terminate()
-            try:
-                proc.wait(timeout=2)
-            except psutil.TimeoutExpired:
-                proc.kill()
+            proc.kill()
             return True
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             return False
