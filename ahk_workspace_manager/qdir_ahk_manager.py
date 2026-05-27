@@ -9,6 +9,19 @@ import psutil
 
 PROJECTS_ROOT = Path.home() / "Desktop" / "Projects"
 INVALID_WINDOWS_FILENAME_CHARS = '<>:"/\\|?*'
+DEFAULT_PROJECT_LAUNCHER_TEMPLATE = (
+    "#Requires AutoHotkey v1.1\n\n"
+    'project := "{project_path}"\n\n'
+    "^XButton1::\n"
+    'Run, wt.exe python "%project%"\n'
+    "return\n\n"
+    "XButton2::\n"
+    'Run, pythonw.exe "%project%"\n'
+    "return\n\n"
+    "XButton1::\n"
+    "Run, taskkill /IM pythonw.exe /F\n"
+    "return\n"
+)
 
 
 class QdirAhkCreateError(Exception):
@@ -177,19 +190,7 @@ class QdirAhkManager:
 
     def _project_launcher_content(self, project_file: Path) -> str:
         project_path = str(project_file)
-        return (
-            "#Requires AutoHotkey v1.1\n\n"
-            f'project := "{project_path}"\n\n'
-            "^XButton1::\n"
-            'Run, wt.exe python "%project%"\n'
-            "return\n\n"
-            "XButton2::\n"
-            'Run, pythonw.exe "%project%"\n'
-            "return\n\n"
-            "XButton1::\n"
-            "Run, taskkill /IM pythonw.exe /F\n"
-            "return\n"
-        )
+        return DEFAULT_PROJECT_LAUNCHER_TEMPLATE.format(project_path=project_path)
 
     def _default_process_provider(self):
         return psutil.process_iter(["pid", "name", "exe", "cmdline"])

@@ -18,4 +18,6 @@ Dependencies are listed in `requirements.txt`.
 - AHK scripts can be assigned to an exclusive group on drop.
 - Starting one script in a group terminates the other managed AHK scripts in that group.
 - `Kill All` terminates managed processes while skipping essential Windows process names.
-- JSON persistence is written to `workspace_manager.json`.
+- JSON persistence is written per user to `%LOCALAPPDATA%\AHKQuickLaunchManager\workspace_manager.json`.
+- First-run AHK launchers use `Desktop\Quick Launch Build Scripts` by default.
+- `ADD NEW FILE` creates a `.ahk` launcher for a selected Python project folder containing `main.py`.
