@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from ctypes import wintypes
 from pathlib import Path
@@ -60,6 +61,9 @@ class MutuallyExclusiveAhkSurface(QWidget):
         header.addStretch()
         button_stack = QVBoxLayout()
         button_stack.setSpacing(6)
+        config_button = QPushButton("OPEN CONFIG LOCATION")
+        config_button.clicked.connect(self.open_config_location)
+        button_stack.addWidget(config_button)
         qdir_button = QPushButton("PICK DIRECTORY")
         qdir_button.clicked.connect(self.choose_qdir)
         button_stack.addWidget(qdir_button)
@@ -83,6 +87,16 @@ class MutuallyExclusiveAhkSurface(QWidget):
         self.scroll.setWidget(self.content)
         layout.addWidget(self.scroll)
         self.refresh()
+
+    def open_config_location(self) -> None:
+        try:
+            save_and_open_config_location(self.config, self.store)
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Open Config Location",
+                f"Could not open config location:\n{self.store.path.parent}\n\n{exc}",
+            )
 
     def choose_qdir(self) -> None:
         selected = QFileDialog.getExistingDirectory(self, "Select AHK QDIR", self.config.ahk_qdir_path)
@@ -275,7 +289,7 @@ class MainWindow(QMainWindow):
             | Qt.WindowCloseButtonHint
             | Qt.MSWindowsFixedSizeDialogHint
         )
-        self.setFixedSize(775, 550)
+        self.setFixedSize(775, 590)
 
         central = QWidget()
         layout = QVBoxLayout(central)
@@ -524,6 +538,15 @@ def status_label_name(status: str) -> str:
         "RUNNING": "running",
         "FAILED": "failed",
     }.get(status, "stopped")
+
+
+def open_folder_in_explorer(path: Path) -> None:
+    subprocess.run(["explorer", str(path)])
+
+
+def save_and_open_config_location(config: AppConfig, store: ConfigStore) -> None:
+    store.save(config)
+    open_folder_in_explorer(store.path.parent)
 
 
 def run() -> int:
