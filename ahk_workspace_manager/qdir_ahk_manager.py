@@ -7,6 +7,13 @@ from typing import Callable, Iterable
 
 import psutil
 
+PROJECTS_ROOT = Path.home() / "Desktop" / "Projects"
+INVALID_WINDOWS_FILENAME_CHARS = '<>:"/\\|?*'
+
+
+class QdirAhkCreateError(Exception):
+    pass
+
 
 @dataclass(frozen=True)
 class QdirAhkScript:
@@ -45,6 +52,27 @@ class QdirAhkManager:
             for path in sorted(root.glob("*.ahk"), key=lambda item: item.name.lower())
             if path.is_file()
         ]
+
+    def create_project_launcher(self, project_dir: str, qdir_dir: str) -> QdirAhkScript:
+        project_root = Path(project_dir).resolve()
+        qdir_root = Path(qdir_dir).resolve()
+        if not qdir_root.exists() or not qdir_root.is_dir():
+            raise QdirAhkCreateError("The picked AHK directory does not exist.")
+
+        project_file = project_root / "main.py"
+        if not project_file.exists() or not project_file.is_file():
+            raise QdirAhkCreateError("The selected project does not contain main.py.")
+
+        filename_stem = self._project_launcher_filename_stem(project_root)
+        if not filename_stem:
+            raise QdirAhkCreateError("Could not create a valid AHK filename for this project.")
+
+        target_path = qdir_root / f"{filename_stem}.ahk"
+        if target_path.exists():
+            raise QdirAhkCreateError(f"{target_path.name} already exists.")
+
+        target_path.write_text(self._project_launcher_content(project_file), encoding="utf-8")
+        return QdirAhkScript(name=target_path.name, path=str(target_path))
 
     def states(self, directory: str) -> list[QdirAhkState]:
         scripts = self.scan(directory)
@@ -133,6 +161,35 @@ class QdirAhkManager:
             return str(Path(path).resolve()).casefold()
         except OSError:
             return str(Path(path).absolute()).casefold()
+
+    def _project_launcher_filename_stem(self, project_root: Path) -> str:
+        try:
+            relative = project_root.relative_to(PROJECTS_ROOT.resolve())
+            raw_name = " - ".join(relative.parts)
+        except ValueError:
+            raw_name = project_root.name
+        return self._sanitize_filename_stem(raw_name)
+
+    def _sanitize_filename_stem(self, name: str) -> str:
+        sanitized = "".join("_" if char in INVALID_WINDOWS_FILENAME_CHARS else char for char in name)
+        sanitized = sanitized.strip().strip(".")
+        return sanitized
+
+    def _project_launcher_content(self, project_file: Path) -> str:
+        project_path = str(project_file)
+        return (
+            "#Requires AutoHotkey v1.1\n\n"
+            f'project := "{project_path}"\n\n'
+            "^XButton1::\n"
+            'Run, wt.exe python "%project%"\n'
+            "return\n\n"
+            "XButton2::\n"
+            'Run, pythonw.exe "%project%"\n'
+            "return\n\n"
+            "XButton1::\n"
+            "Run, taskkill /IM pythonw.exe /F\n"
+            "return\n"
+        )
 
     def _default_process_provider(self):
         return psutil.process_iter(["pid", "name", "exe", "cmdline"])

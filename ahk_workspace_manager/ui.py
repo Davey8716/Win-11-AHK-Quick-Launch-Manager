@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -29,7 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from .config import AppConfig, ConfigStore
-from .qdir_ahk_manager import QdirAhkManager, QdirAhkScript, QdirAhkState
+from .qdir_ahk_manager import PROJECTS_ROOT, QdirAhkCreateError, QdirAhkManager, QdirAhkScript, QdirAhkState
 from .single_instance import SingleInstanceGuard, WM_APP_RESTORE_INSTANCE
 
 
@@ -57,9 +58,15 @@ class MutuallyExclusiveAhkSurface(QWidget):
         title.setObjectName("surfaceTitle")
         header.addWidget(title)
         header.addStretch()
-        qdir_button = QPushButton("QDIR")
+        button_stack = QVBoxLayout()
+        button_stack.setSpacing(6)
+        qdir_button = QPushButton("PICK DIRECTORY")
         qdir_button.clicked.connect(self.choose_qdir)
-        header.addWidget(qdir_button)
+        button_stack.addWidget(qdir_button)
+        add_file_button = QPushButton("ADD NEW FILE")
+        add_file_button.clicked.connect(self.add_project_launcher)
+        button_stack.addWidget(add_file_button)
+        header.addLayout(button_stack)
         layout.addLayout(header)
 
         self.path_label = QLabel(self.config.ahk_qdir_path)
@@ -85,6 +92,18 @@ class MutuallyExclusiveAhkSurface(QWidget):
         self.store.save(self.config)
         self._clear_list()
         self.rows_by_path.clear()
+        self.refresh()
+
+    def add_project_launcher(self) -> None:
+        start_dir = PROJECTS_ROOT if PROJECTS_ROOT.exists() else Path.home()
+        selected = QFileDialog.getExistingDirectory(self, "Select Project", str(start_dir))
+        if not selected:
+            return
+        try:
+            self.manager.create_project_launcher(selected, self.config.ahk_qdir_path)
+        except QdirAhkCreateError as exc:
+            QMessageBox.warning(self, "Add New File", str(exc))
+            return
         self.refresh()
 
     def refresh(self) -> None:
