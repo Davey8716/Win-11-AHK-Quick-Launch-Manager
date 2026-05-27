@@ -1,5 +1,7 @@
 # AHK Quick Launch Manager
 
+A tiny Windows tray app for AutoHotkey users who jump between Python main.py projects and want one active quick-launch profile at a time.
+
 Windows-only PySide6 utility for a very specific workflow: managing a folder of AutoHotkey launchers that start Python `main.py` projects.
 
 This is not a general launcher. It is for users who keep many small Python desktop tools or automation projects and want a quick, mouse-button-driven way to switch which AutoHotkey launcher is active. The app is intentionally centered on one active `.ahk` launcher at a time.
