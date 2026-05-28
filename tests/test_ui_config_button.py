@@ -1,8 +1,12 @@
 from pathlib import Path
 from subprocess import CompletedProcess
 
+from PySide6.QtWidgets import QApplication
+
 import ahk_workspace_manager.ui as ui_module
 from ahk_workspace_manager.config import AppConfig
+from ahk_workspace_manager.qdir_ahk_manager import QdirAhkManager
+from ahk_workspace_manager.ui import MutuallyExclusiveAhkSurface
 from ahk_workspace_manager.ui import open_folder_in_explorer, save_and_open_config_location
 
 
@@ -51,3 +55,18 @@ def test_save_and_open_config_location_saves_before_opening(monkeypatch, tmp_pat
     assert store.saved_config is config
     assert opened_paths == [store.path.parent]
     assert store.path not in opened_paths
+
+
+def test_open_qdir_location_opens_configured_qdir(monkeypatch, tmp_path):
+    opened_paths = []
+    qdir = tmp_path / "qdir"
+    config = AppConfig(ahk_qdir_path=str(qdir))
+    store = FakeStore(tmp_path / "AHKQuickLaunchManager" / "workspace_manager.json")
+    monkeypatch.setattr(ui_module, "open_folder_in_explorer", lambda path: opened_paths.append(path))
+
+    app = QApplication.instance() or QApplication([])
+    surface = MutuallyExclusiveAhkSurface(config, store, QdirAhkManager())
+    surface.open_qdir_location()
+
+    assert app is not None
+    assert opened_paths == [qdir]

@@ -64,6 +64,9 @@ class MutuallyExclusiveAhkSurface(QWidget):
         config_button = QPushButton("OPEN CONFIG LOCATION")
         config_button.clicked.connect(self.open_config_location)
         button_stack.addWidget(config_button)
+        open_qdir_button = QPushButton("OPEN DIRECTORY")
+        open_qdir_button.clicked.connect(self.open_qdir_location)
+        button_stack.addWidget(open_qdir_button)
         qdir_button = QPushButton("PICK DIRECTORY")
         qdir_button.clicked.connect(self.choose_qdir)
         button_stack.addWidget(qdir_button)
@@ -96,6 +99,17 @@ class MutuallyExclusiveAhkSurface(QWidget):
                 self,
                 "Open Config Location",
                 f"Could not open config location:\n{self.store.path.parent}\n\n{exc}",
+            )
+
+    def open_qdir_location(self) -> None:
+        qdir_path = Path(self.config.ahk_qdir_path)
+        try:
+            open_folder_in_explorer(qdir_path)
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Open Directory",
+                f"Could not open directory:\n{qdir_path}\n\n{exc}",
             )
 
     def choose_qdir(self) -> None:
