@@ -7,6 +7,7 @@ import ahk_workspace_manager.ui as ui_module
 from ahk_workspace_manager.config import AppConfig
 from ahk_workspace_manager.qdir_ahk_manager import QdirAhkManager, QdirAhkScript, QdirAhkState
 from ahk_workspace_manager.ui import MutuallyExclusiveAhkSurface
+from ahk_workspace_manager.ui import configure_tray_application
 from ahk_workspace_manager.ui import open_folder_in_explorer, save_and_open_config_location
 
 
@@ -44,6 +45,35 @@ class FakeQdirAhkManager:
 
 def run_guarded_actions_immediately(monkeypatch) -> None:
     monkeypatch.setattr(ui_module.QTimer, "singleShot", lambda _interval, callback: callback())
+
+
+class FakeApp:
+    def __init__(self) -> None:
+        self.quit_on_last_window_closed = None
+        self.icon = None
+
+    def setQuitOnLastWindowClosed(self, enabled: bool) -> None:
+        self.quit_on_last_window_closed = enabled
+
+    def setWindowIcon(self, icon) -> None:
+        self.icon = icon
+
+
+class FakeWindow:
+    def __init__(self) -> None:
+        self.icon = None
+        self.close_to_tray_enabled = False
+        self.restored = False
+        self.application_tray_icon = None
+
+    def setWindowIcon(self, icon) -> None:
+        self.icon = icon
+
+    def enable_close_to_tray(self) -> None:
+        self.close_to_tray_enabled = True
+
+    def restore_from_activation(self) -> None:
+        self.restored = True
 
 
 def test_open_folder_in_explorer_opens_folder(monkeypatch, tmp_path):
@@ -145,3 +175,36 @@ def test_stop_does_not_call_start_success_callback(monkeypatch, tmp_path):
     assert app is not None
     assert manager.stopped == [manager.script]
     assert hidden == []
+
+
+def test_configure_tray_application_shows_tray_and_focuses_window(monkeypatch):
+    tray_instances = []
+
+    class FakeTrayIcon:
+        def __init__(self, app, window, icon) -> None:
+            self.app = app
+            self.window = window
+            self.icon = icon
+            self.shown = False
+            tray_instances.append(self)
+
+        def show(self) -> None:
+            self.shown = True
+
+    monkeypatch.setattr(ui_module.QSystemTrayIcon, "isSystemTrayAvailable", lambda: True)
+    monkeypatch.setattr(ui_module, "application_icon", lambda window: "icon")
+    monkeypatch.setattr(ui_module, "ApplicationTrayIcon", FakeTrayIcon)
+    monkeypatch.setattr(ui_module.QTimer, "singleShot", lambda _interval, callback: callback())
+    app = FakeApp()
+    window = FakeWindow()
+
+    tray_icon = configure_tray_application(app, window)
+
+    assert app.quit_on_last_window_closed is False
+    assert app.icon == "icon"
+    assert window.icon == "icon"
+    assert window.close_to_tray_enabled is True
+    assert tray_icon is tray_instances[0]
+    assert tray_icon.shown is True
+    assert window.application_tray_icon is tray_icon
+    assert window.restored is True

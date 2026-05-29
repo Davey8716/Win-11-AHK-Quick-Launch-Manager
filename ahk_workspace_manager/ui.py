@@ -553,6 +553,7 @@ def configure_tray_application(app: QApplication, window: MainWindow) -> Applica
     tray_icon = ApplicationTrayIcon(app, window, icon)
     window.application_tray_icon = tray_icon
     tray_icon.show()
+    QTimer.singleShot(0, window.restore_from_activation)
     return tray_icon
 
 
