@@ -5,6 +5,7 @@ import subprocess
 import sys
 from ctypes import wintypes
 from pathlib import Path
+from typing import Callable
 
 import win32con
 import win32gui
@@ -43,11 +44,18 @@ LOCAL_ICON_CANDIDATES = (
 
 
 class MutuallyExclusiveAhkSurface(QWidget):
-    def __init__(self, config: AppConfig, store: ConfigStore, manager: QdirAhkManager) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        store: ConfigStore,
+        manager: QdirAhkManager,
+        on_start_success: Callable[[], None] | None = None,
+    ) -> None:
         super().__init__()
         self.config = config
         self.store = store
         self.manager = manager
+        self.on_start_success = on_start_success
         self.states: list[QdirAhkState] = []
         self.busy = False
         self.rows_by_path: dict[str, QdirAhkRow] = {}
@@ -164,7 +172,11 @@ class MutuallyExclusiveAhkSurface(QWidget):
         self._remove_missing_rows(active_keys)
 
     def start(self, script: QdirAhkScript) -> None:
-        self._run_guarded_action(lambda: self.manager.start(script, self.config.ahk_qdir_path))
+        def start_action() -> None:
+            if self.manager.start(script, self.config.ahk_qdir_path) and self.on_start_success:
+                self.on_start_success()
+
+        self._run_guarded_action(start_action)
 
     def stop(self, script: QdirAhkScript) -> None:
         self._run_guarded_action(lambda: self.manager.stop(script))
@@ -307,7 +319,12 @@ class MainWindow(QMainWindow):
 
         central = QWidget()
         layout = QVBoxLayout(central)
-        self.qdir_ahk_surface = MutuallyExclusiveAhkSurface(self.config, self.store, self.qdir_ahk_manager)
+        self.qdir_ahk_surface = MutuallyExclusiveAhkSurface(
+            self.config,
+            self.store,
+            self.qdir_ahk_manager,
+            on_start_success=self.hide,
+        )
         layout.addWidget(self.qdir_ahk_surface)
         self.setCentralWidget(central)
 

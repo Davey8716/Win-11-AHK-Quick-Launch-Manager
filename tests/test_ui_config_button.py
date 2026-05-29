@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QApplication
 
 import ahk_workspace_manager.ui as ui_module
 from ahk_workspace_manager.config import AppConfig
-from ahk_workspace_manager.qdir_ahk_manager import QdirAhkManager
+from ahk_workspace_manager.qdir_ahk_manager import QdirAhkManager, QdirAhkScript, QdirAhkState
 from ahk_workspace_manager.ui import MutuallyExclusiveAhkSurface
 from ahk_workspace_manager.ui import open_folder_in_explorer, save_and_open_config_location
 
@@ -17,6 +17,33 @@ class FakeStore:
 
     def save(self, config: AppConfig) -> None:
         self.saved_config = config
+
+
+class FakeQdirAhkManager:
+    def __init__(self, start_result: bool = True, stop_result: bool = True) -> None:
+        self.script = QdirAhkScript(name="Tool.ahk", path="C:/Tool/Tool.ahk")
+        self.start_result = start_result
+        self.stop_result = stop_result
+        self.started = []
+        self.stopped = []
+
+    def states(self, directory: str):
+        return [QdirAhkState(script=self.script, status="STOPPED")]
+
+    def normalize_path(self, path: str) -> str:
+        return path.casefold()
+
+    def start(self, script: QdirAhkScript, directory: str) -> bool:
+        self.started.append((script, directory))
+        return self.start_result
+
+    def stop(self, script: QdirAhkScript) -> bool:
+        self.stopped.append(script)
+        return self.stop_result
+
+
+def run_guarded_actions_immediately(monkeypatch) -> None:
+    monkeypatch.setattr(ui_module.QTimer, "singleShot", lambda _interval, callback: callback())
 
 
 def test_open_folder_in_explorer_opens_folder(monkeypatch, tmp_path):
@@ -70,3 +97,51 @@ def test_open_qdir_location_opens_configured_qdir(monkeypatch, tmp_path):
 
     assert app is not None
     assert opened_paths == [qdir]
+
+
+def test_start_success_calls_start_success_callback(monkeypatch, tmp_path):
+    run_guarded_actions_immediately(monkeypatch)
+    hidden = []
+    config = AppConfig(ahk_qdir_path=str(tmp_path / "qdir"))
+    store = FakeStore(tmp_path / "AHKQuickLaunchManager" / "workspace_manager.json")
+    manager = FakeQdirAhkManager(start_result=True)
+
+    app = QApplication.instance() or QApplication([])
+    surface = MutuallyExclusiveAhkSurface(config, store, manager, on_start_success=lambda: hidden.append(True))
+    surface.start(manager.script)
+
+    assert app is not None
+    assert manager.started == [(manager.script, config.ahk_qdir_path)]
+    assert hidden == [True]
+
+
+def test_start_failure_does_not_call_start_success_callback(monkeypatch, tmp_path):
+    run_guarded_actions_immediately(monkeypatch)
+    hidden = []
+    config = AppConfig(ahk_qdir_path=str(tmp_path / "qdir"))
+    store = FakeStore(tmp_path / "AHKQuickLaunchManager" / "workspace_manager.json")
+    manager = FakeQdirAhkManager(start_result=False)
+
+    app = QApplication.instance() or QApplication([])
+    surface = MutuallyExclusiveAhkSurface(config, store, manager, on_start_success=lambda: hidden.append(True))
+    surface.start(manager.script)
+
+    assert app is not None
+    assert manager.started == [(manager.script, config.ahk_qdir_path)]
+    assert hidden == []
+
+
+def test_stop_does_not_call_start_success_callback(monkeypatch, tmp_path):
+    run_guarded_actions_immediately(monkeypatch)
+    hidden = []
+    config = AppConfig(ahk_qdir_path=str(tmp_path / "qdir"))
+    store = FakeStore(tmp_path / "AHKQuickLaunchManager" / "workspace_manager.json")
+    manager = FakeQdirAhkManager(stop_result=True)
+
+    app = QApplication.instance() or QApplication([])
+    surface = MutuallyExclusiveAhkSurface(config, store, manager, on_start_success=lambda: hidden.append(True))
+    surface.stop(manager.script)
+
+    assert app is not None
+    assert manager.stopped == [manager.script]
+    assert hidden == []
